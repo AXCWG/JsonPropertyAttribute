@@ -1,5 +1,9 @@
 bin/
 obj/
 /packages/
+artifacts/
+TestResults/
+.DS_Store
 riderModule.iml
 /_ReSharper.Caches/
+/.idea/

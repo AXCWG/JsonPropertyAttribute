@@ -1,0 +1,71 @@
+<Project>
+
+  <!--
+    Release/publish helpers for JsonPropertyAttribute.
+
+      dotnet msbuild JsonProperty/JsonProperty.csproj /t:PackRelease
+      dotnet msbuild JsonProperty/JsonProperty.csproj /t:PackRelease -p:Version=1.2.3
+      dotnet msbuild JsonProperty/JsonProperty.csproj /t:PushRelease -p:NuGetApiKey=***
+      dotnet msbuild JsonProperty/JsonProperty.csproj /t:Release -p:Push=true
+
+    Properties (all optional):
+      PublishConfiguration  configuration used for packing           (default: Release)
+      NuGetOutputPath       nupkg output folder                      (default: <repo>/artifacts/nuget)
+      NuGetSource           push source (feed URL or folder)         (default: https://api.nuget.org/v3/index.json)
+      NuGetApiKey           API key; falls back to env NUGET_API_KEY (folder feeds accept any non-empty value)
+      Push                  set to true to make /t:Release push
+  -->
+
+  <PropertyGroup>
+    <PublishConfiguration Condition="'$(PublishConfiguration)' == ''">Release</PublishConfiguration>
+
+    <NuGetOutputPath Condition="'$(NuGetOutputPath)' == ''">$(MSBuildThisFileDirectory)..\artifacts\nuget\</NuGetOutputPath>
+    <NuGetOutputPath>$([System.IO.Path]::GetFullPath('$(NuGetOutputPath)'))</NuGetOutputPath>
+
+    <NuGetSource Condition="'$(NuGetSource)' == ''">https://api.nuget.org/v3/index.json</NuGetSource>
+
+    <NuGetApiKey Condition="'$(NuGetApiKey)' == ''">$(NUGET_API_KEY)</NuGetApiKey>
+
+    <Push Condition="'$(Push)' == ''">false</Push>
+  </PropertyGroup>
+
+  <!-- Pack into $(NuGetOutputPath). Reuses the SDK Pack target, so `dotnet pack` behaves identically. -->
+  <Target Name="PackRelease">
+    <Message Importance="high" Text="Packing $(MSBuildProjectName) $(Version) ($(PublishConfiguration)) -> $(NuGetOutputPath)" />
+
+    <MSBuild
+      Projects="$(MSBuildProjectFullPath)"
+      Targets="Pack"
+      Properties="Configuration=$(PublishConfiguration);PackageOutputPath=$(NuGetOutputPath);NoBuild=false;NoRestore=false;GeneratePackageOnBuild=false" />
+  </Target>
+
+  <!-- Pack + push. -->
+  <Target Name="PushRelease" DependsOnTargets="PackRelease">
+    <Error
+      Condition="'$(NuGetApiKey)' == ''"
+      Text="NuGetApiKey is empty. Pass -p:NuGetApiKey=*** or set the NUGET_API_KEY environment variable." />
+
+    <ItemGroup>
+      <NuGetPackageToPush Include="$(NuGetOutputPath)*.nupkg" />
+      <NuGetPackageToPush Remove="$(NuGetOutputPath)*.symbols.nupkg" />
+    </ItemGroup>
+
+    <Error
+      Condition="'@(NuGetPackageToPush)' == ''"
+      Text="No .nupkg found in $(NuGetOutputPath); PackRelease produced nothing." />
+
+    <Message
+      Importance="high"
+      Text="Pushing @(NuGetPackageToPush->'%(Filename)%(Extension)', ' ') -> $(NuGetSource)" />
+
+    <Exec
+      Command="dotnet nuget push &quot;%(NuGetPackageToPush.FullPath)&quot; --source &quot;$(NuGetSource)&quot; --api-key &quot;$(NuGetApiKey)&quot; --skip-duplicate --no-symbols" />
+  </Target>
+
+  <!-- One-shot entry point: always packs, pushes only with -p:Push=true. -->
+  <Target Name="Release" DependsOnTargets="PackRelease">
+    <CallTarget Targets="PushRelease" Condition="'$(Push)' == 'true'" />
+    <Message Importance="high" Text="Release package(s) ready in $(NuGetOutputPath)" />
+  </Target>
+
+</Project>

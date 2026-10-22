@@ -4,10 +4,40 @@
         <TargetFramework>net11.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
+    </PropertyGroup>
+
+    <!-- Package / release metadata -->
+    <PropertyGroup>
+        <PackageId>JsonPropertyAttribute</PackageId>
+        <Version>1.0.0</Version>
+        <Authors>AXCWG</Authors>
+        <Company>AXCWG</Company>
+        <Description>Store complex CLR properties in a single TEXT column with System.Text.Json: mark a property with [DbJsonSerialize] and call modelBuilder.UseJsonSerializeAttribute&lt;TContext&gt;() in OnModelCreating.</Description>
+        <PackageTags>entity-framework-core;efcore;json;sqlite;value-converter;attribute</PackageTags>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <RepositoryType>git</RepositoryType>
+        <RepositoryUrl>https://github.com/AXCWG/JsonPropertyAttribute.git</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/AXCWG/JsonPropertyAttribute</PackageProjectUrl>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
       <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.13" />
     </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <!-- /t:PackRelease, /t:PushRelease, /t:Release -->
+    <Import Project="..\build\JsonProperty.Publish.targets" />
 
 </Project>
