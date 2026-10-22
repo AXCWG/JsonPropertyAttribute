@@ -104,7 +104,7 @@ jobs:
           if-no-files-found: ignore
 
   publish-nuget-org:
-    name: Push to nuget.org
+    name: Push to nuget.org (trusted publishing)
     needs: build
     # Dry-run on manual dispatch unless "push" is checked.
     if: github.event_name == 'push' || inputs.push
@@ -112,10 +112,10 @@ jobs:
     environment:
       name: nuget
       url: https://www.nuget.org/packages/JsonPropertyAttribute
+    permissions:
+      contents: read
+      id-token: write # required: lets the NuGet/login action request a GitHub OIDC token
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -135,19 +135,29 @@ jobs:
           ls -l artifacts/nuget
           test -n "$(ls -1 artifacts/nuget/*.nupkg 2>/dev/null)" || { echo "::error::No .nupkg produced"; exit 1; }
 
+      # Exchanges a short-lived GitHub OIDC token for a temporary nuget.org API key (valid 1 hour).
+      # The OIDC token can only be redeemed once, and the key must be used soon after, so this runs
+      # right before the push and no long-lived NUGET_API_KEY secret is involved.
+      - name: NuGet login (OIDC -> temp API key)
+        id: login
+        uses: NuGet/login@v1
+        with:
+          # nuget.org profile name, not the email address.
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Push package
         shell: bash
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_TEMP_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           set -euo pipefail
-          if [ -z "${NUGET_API_KEY:-}" ]; then
-            echo "::error::NUGET_API_KEY secret is not configured"
+          if [ -z "${NUGET_TEMP_KEY:-}" ]; then
+            echo "::error::NuGet/login returned no API key — check the trusted publishing policy and the NUGET_USER secret"
             exit 1
           fi
           dotnet nuget push "artifacts/nuget/*.nupkg" \
             --source "$NUGET_ORG" \
-            --api-key "$NUGET_API_KEY" \
+            --api-key "$NUGET_TEMP_KEY" \
             --skip-duplicate \
             --no-symbols
 
@@ -155,12 +165,12 @@ jobs:
         if: ${{ hashFiles('artifacts/nuget/*.snupkg') != '' }}
         shell: bash
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_TEMP_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           set -euo pipefail
           dotnet nuget push "artifacts/nuget/*.snupkg" \
             --source "$NUGET_ORG" \
-            --api-key "$NUGET_API_KEY" \
+            --api-key "$NUGET_TEMP_KEY" \
             --skip-duplicate
 
       - name: Summary
@@ -168,6 +178,7 @@ jobs:
         run: |
           echo "### Published \`JsonPropertyAttribute ${{ needs.build.outputs.version }}\` to nuget.org" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "via GitHub OIDC trusted publishing (no long-lived API key)." >> "$GITHUB_STEP_SUMMARY"
           echo "https://www.nuget.org/packages/JsonPropertyAttribute/${{ needs.build.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
 
   publish-github-packages:

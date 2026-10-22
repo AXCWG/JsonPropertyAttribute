@@ -190,11 +190,17 @@ push tag v1.2.3        -> build + test + pack + push 1.2.3
 workflow_dispatch      -> build + test + pack; pushes only when "push" is checked
 ```
 
-One-time setup on the repository:
+Publishing uses [nuget.org trusted publishing](https://learn.microsoft.com/nuget/nuget-org/trusted-publishing): the job asks GitHub for an OIDC token, exchanges it for a **short-lived** nuget.org API key (valid one hour, single use), pushes, and forgets it. There is no long-lived package secret to store or rotate.
 
-1. Create a NuGet.org API key scoped to **Push new packages and package versions** → `JsonPropertyAttribute`.
-2. Add it as the repository secret `NUGET_API_KEY` (Settings → Secrets and variables → Actions).
-3. Optional: create an environment named `nuget` to require approval before publishing.
+One-time setup:
+
+1. On nuget.org: **username → Trusted Publishing → Add new policy** with
+   - Repository owner: `AXCWG`
+   - Repository: `JsonPropertyAttribute`
+   - Workflow file: `publish.yml` (file name only, no `.github/workflows/` prefix)
+   - Environment: `nuget` (optional; must match the `environment:` in the workflow)
+2. In the GitHub repository: add the secret `NUGET_USER` holding your **nuget.org profile name** (not the email address). No API key secret is needed.
+3. Optional: approve/limit the `nuget` environment to gate publishing (Settings → Environments).
 4. Optional: set the repository variable `PUSH_TO_GITHUB_PACKAGES` to `true` to also publish to `nuget.pkg.github.com`.
 
 Release:
@@ -204,4 +210,4 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-The package version comes from the tag (`v1.0.0` → `1.0.0`); `v1.0.0-rc.1` produces a prerelease. Packed `.nupkg` / `.snupkg` are attached to the workflow run as the `nupkg-<version>` artifact, and the `NuGetApiKey` never appears in the logs — the workflow passes it through the `NUGET_API_KEY` environment variable.
+The package version comes from the tag (`v1.0.0` → `1.0.0`); `v1.0.0-rc.1` produces a prerelease. Packed `.nupkg` / `.snupkg` are attached to the workflow run as the `nupkg-<version>` artifact. The temporary API key returned by `NuGet/login` is passed to `dotnet nuget push` through an environment variable, so it never shows up in the logs.
