@@ -1,0 +1,208 @@
+name: Publish NuGet
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish (e.g. 1.2.3)'
+        required: true
+        default: '1.0.0'
+        type: string
+      push:
+        description: 'Actually push the package (dry-run when unchecked)'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: nuget-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  CONFIGURATION: Release
+  NUGET_ORG: https://api.nuget.org/v3/index.json
+
+jobs:
+  build:
+    name: Build, test, pack
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version='${{ inputs.version }}'
+          else
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Invalid package version '$version'"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Packaging version: $version"
+
+      - name: Restore
+        run: dotnet restore JsonPropertyAttribute.slnx
+
+      - name: Build
+        run: dotnet build JsonPropertyAttribute.slnx -c "$CONFIGURATION" --no-restore
+
+      - name: Test
+        run: >-
+          dotnet test JsonPropertyAttribute.slnx -c "$CONFIGURATION" --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory artifacts/test-results
+
+      - name: Pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet msbuild JsonProperty/JsonProperty.csproj \
+            /t:PackRelease \
+            -p:Version='${{ steps.version.outputs.version }}' \
+            -p:ContinuousIntegrationBuild=true
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg-${{ steps.version.outputs.version }}
+          path: artifacts/nuget/*
+          if-no-files-found: error
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: artifacts/test-results/*
+          if-no-files-found: ignore
+
+  publish-nuget-org:
+    name: Push to nuget.org
+    needs: build
+    # Dry-run on manual dispatch unless "push" is checked.
+    if: github.event_name == 'push' || inputs.push
+    runs-on: ubuntu-latest
+    environment:
+      name: nuget
+      url: https://www.nuget.org/packages/JsonPropertyAttribute
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg-${{ needs.build.outputs.version }}
+          path: artifacts/nuget
+
+      - name: Verify package layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -l artifacts/nuget
+          test -n "$(ls -1 artifacts/nuget/*.nupkg 2>/dev/null)" || { echo "::error::No .nupkg produced"; exit 1; }
+
+      - name: Push package
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NUGET_API_KEY:-}" ]; then
+            echo "::error::NUGET_API_KEY secret is not configured"
+            exit 1
+          fi
+          dotnet nuget push "artifacts/nuget/*.nupkg" \
+            --source "$NUGET_ORG" \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate \
+            --no-symbols
+
+      - name: Push symbols
+        if: ${{ hashFiles('artifacts/nuget/*.snupkg') != '' }}
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          dotnet nuget push "artifacts/nuget/*.snupkg" \
+            --source "$NUGET_ORG" \
+            --api-key "$NUGET_API_KEY" \
+            --skip-duplicate
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "### Published \`JsonPropertyAttribute ${{ needs.build.outputs.version }}\` to nuget.org" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://www.nuget.org/packages/JsonPropertyAttribute/${{ needs.build.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+
+  publish-github-packages:
+    name: Push to GitHub Packages (optional)
+    needs: build
+    if: github.event_name == 'push' || inputs.push
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_FEED: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: nupkg-${{ needs.build.outputs.version }}
+          path: artifacts/nuget
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Push to GitHub Packages
+        if: vars.PUSH_TO_GITHUB_PACKAGES == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          dotnet nuget push "artifacts/nuget/*.nupkg" \
+            --source "$GITHUB_FEED" \
+            --api-key "$GITHUB_TOKEN_VALUE" \
+            --username "${{ github.actor }}" \
+            --skip-duplicate \
+            --no-symbols
+
+      - name: Skipped
+        if: vars.PUSH_TO_GITHUB_PACKAGES != 'true'
+        run: echo "PUSH_TO_GITHUB_PACKAGES repository variable is not 'true' — skipping GitHub Packages push."

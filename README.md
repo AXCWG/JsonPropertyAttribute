@@ -180,3 +180,28 @@ dotnet msbuild JsonProperty/JsonProperty.csproj /t:PushRelease -p:NuGetSource=./
 Overridable properties: `PublishConfiguration`, `NuGetOutputPath`, `NuGetSource`, `NuGetApiKey`, `Version`.
 
 The targets are also hooked so a plain `dotnet pack -c Release` produces the same package.
+
+### CI (GitHub Actions)
+
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml) builds, tests and packs on every release tag, then pushes to NuGet.org.
+
+```text
+push tag v1.2.3        -> build + test + pack + push 1.2.3
+workflow_dispatch      -> build + test + pack; pushes only when "push" is checked
+```
+
+One-time setup on the repository:
+
+1. Create a NuGet.org API key scoped to **Push new packages and package versions** → `JsonPropertyAttribute`.
+2. Add it as the repository secret `NUGET_API_KEY` (Settings → Secrets and variables → Actions).
+3. Optional: create an environment named `nuget` to require approval before publishing.
+4. Optional: set the repository variable `PUSH_TO_GITHUB_PACKAGES` to `true` to also publish to `nuget.pkg.github.com`.
+
+Release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The package version comes from the tag (`v1.0.0` → `1.0.0`); `v1.0.0-rc.1` produces a prerelease. Packed `.nupkg` / `.snupkg` are attached to the workflow run as the `nupkg-<version>` artifact, and the `NuGetApiKey` never appears in the logs — the workflow passes it through the `NUGET_API_KEY` environment variable.
