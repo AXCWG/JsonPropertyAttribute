@@ -23,15 +23,9 @@ public sealed class Test1
         db.SaveChanges();
         db.Dispose();
         using var dbRe = new TestDb(path);
-        try
-        {
-            Assert.IsNull(dbRe.Entries.First(i=>i.Id == 1).Content);
-            Assert.IsNull(dbRe.Entries.First(i=>i.Id == 1).NotNullStruct);
-End();        }
-        catch (AssertFailedException)
-        {
-            throw;
-        }
+        Assert.IsNull(dbRe.Entries.First(i=>i.Id == 1).Content);
+        Assert.IsNull(dbRe.Entries.First(i=>i.Id == 1).NotNullStruct);
+        End();
     }
     // Interface type, save as JSON, read as interface instance. 
     [TestMethod]
@@ -47,15 +41,9 @@ End();        }
         db.SaveChanges();
         db.Dispose();
         using var dbRe = new TestDb(path);
-        try
-        {
-            Assert.IsTrue(dbRe.Entries.First(i=>i.Id == 1).Content?.All(i=>i is "Lol" or "z"));
+        Assert.IsTrue(dbRe.Entries.First(i=>i.Id == 1).Content?.All(i=>i is "Lol" or "z"));
             
-End();        }
-        catch (AssertFailedException)
-        {
-            throw;
-        }
+        End();
     }
     // Not null reference property setting to null cause property to be null. This is json serialize after all. 
     // Obviously non-reference type will not be null. 
