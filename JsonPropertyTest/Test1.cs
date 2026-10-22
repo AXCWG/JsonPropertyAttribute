@@ -25,7 +25,7 @@ public sealed class Test1
         using var dbRe = new TestDb(path);
         Assert.IsNull(dbRe.Entries.First(i=>i.Id == 1).Content);
         Assert.IsNull(dbRe.Entries.First(i=>i.Id == 1).NotNullStruct);
-        End();
+        End(path);
     }
     // Interface type, save as JSON, read as interface instance. 
     [TestMethod]
@@ -43,7 +43,7 @@ public sealed class Test1
         using var dbRe = new TestDb(path);
         Assert.IsTrue(dbRe.Entries.First(i=>i.Id == 1).Content?.All(i=>i is "Lol" or "z"));
             
-        End();
+        End(path);
     }
     // Not null reference property setting to null cause property to be null. This is json serialize after all. 
     // Obviously non-reference type will not be null. 
@@ -58,7 +58,7 @@ public sealed class Test1
         db.Dispose();
         using var db2 = new Series2TestDb(path);
         Assert.IsNull(db2.Entries.First(i=>i.Id == 1).Content);
-End();    }
+End(path);    }
 // Empty string stored in DB default no error and set to default
     [TestMethod]
     public void TestMethod4()
@@ -74,7 +74,7 @@ End();    }
         Assert.IsNull(db2.Entries.First(i=>i.Id == 1).Content);
         // In case property is not nullable, therefore property defaults to default value of the type. 
         Assert.AreEqual(db2.Entries.First(i => i.Id == 1).NotNullStruct, new Series2TestDb.NotNullStruct());
-End();    }
+End(path);    }
 // Empty string stored in DB with certain option will throw. 
     [TestMethod]
     public void TestMethod5()
@@ -97,12 +97,12 @@ End();    }
             }
         });
         Console.WriteLine(ex.Message);
-        End();
+        End(path);
     }
 
-    static void End()
+    static void End(string id)
     {
-        foreach (var enumerateFile in Directory.EnumerateFiles(".", "*.db*"))
+        foreach (var enumerateFile in Directory.EnumerateFiles(".", $"{id}.db*"))
         {
             File.Delete(enumerateFile);
         }
